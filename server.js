@@ -160,7 +160,7 @@ function render() {
             <div style="font-family:monospace;font-size:15px;font-weight:700">Competitor URLs</div>
             <div style="font-size:12px;color:#7878a0;margin-top:3px">Paste tour listing URLs from any operator</div>
           </div>
-          <button onclick="urls.push('');render()" style="background:transparent;border:1px solid #2a2a44;color:#7878a0;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px">+ Add URL</button>
+          <button onclick="window.addUrl()" style="background:transparent;border:1px solid #2a2a44;color:#7878a0;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px">+ Add URL</button>
         </div>
         <div id="url-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">
           \${urls.map((u,i) => \`
@@ -172,7 +172,7 @@ function render() {
             \${urls.length > 1 ? \`<button onclick="urls.splice(\${i},1);render()" style="background:none;border:none;color:#4a4a68;font-size:18px;cursor:pointer">×</button>\` : ''}
           </div>\`).join('')}
         </div>
-        <button onclick="doScrape()" id="scrape-btn"
+        <button onclick="window.doScrape()" id="scrape-btn"
           style="background:#e8ff3c;color:#0d0d14;border:none;padding:8px 24px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;min-width:160px">
           ⚡ Scrape \${urls.filter(u=>u.trim()).length} URL(s)
         </button>
@@ -248,7 +248,8 @@ async function doScrape() {
   }
   render();
 }
-
+window.doScrape = doScrape;
+window.addUrl = function() { urls.push(''); render(); };
 render();
 </script>
 </body>
