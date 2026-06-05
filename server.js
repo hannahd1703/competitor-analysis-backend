@@ -30,7 +30,10 @@ app.post('/api/scrape/batch', async (req, res) => {
   const results = [];
   for (const url of urls) {
     try {
-      const data = await scrapeUrl(url);
+      const data = await Promise.race([
+        scrapeUrl(url),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Scrape timed out after 8s')), 8000))
+      ]);
       results.push({ success: true, url, data });
     } catch (err) {
       results.push({ success: false, url, error: err.message, data: null });
