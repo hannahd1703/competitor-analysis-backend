@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CompEdge</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d14;color:#e8e8f0;font-family:'DM Sans',sans-serif;font-size:14px}
+input:focus{outline:none;border-color:#e8ff3c!important}
+input::placeholder{color:#4a4a68}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#13131f}
+::-webkit-scrollbar-thumb{background:#2a2a44;border-radius:3px}
+button:hover{opacity:0.85}
+table{border-collapse:collapse}
+.null{color:#4a4a68}
+.price{color:#e8ff3c;font-family:monospace;font-weight:700}
+.badge-yes{background:rgba(46,213,115,0.15);color:#2ed573;padding:2px 8px;border-radius:3px;font-size:11px;font-family:monospace}
+.badge-no{background:rgba(255,71,87,0.1);color:#ff4757;padding:2px 8px;border-radius:3px;font-size:11px;font-family:monospace}
+.cell-list{list-style:none;padding:0;margin:0}
+.cell-list li{font-size:11px;background:#20203a;border-radius:3px;padding:2px 6px;margin-bottom:2px;color:#7878a0}
+.header{background:#13131f;border-bottom:1px solid #2a2a44;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-mark{font-size:28px;color:#e8ff3c}
+.logo-title{font-family:monospace;font-size:22px;font-weight:700;color:#e8ff3c}
+.logo-sub{font-size:11px;color:#7878a0;text-transform:uppercase;letter-spacing:0.08em}
+.main{max-width:1400px;margin:0 auto;padding:28px 24px}
+.panel{background:#13131f;border:1px solid #2a2a44;border-radius:10px;padding:24px;margin-bottom:24px}
+.panel-title{font-family:monospace;font-size:15px;font-weight:700}
+.panel-hint{font-size:12px;color:#7878a0;margin-top:3px}
+.url-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.url-num{font-family:monospace;font-size:11px;color:#4a4a68;width:18px;text-align:right}
+.url-input{flex:1;background:#0d0d14;border:1px solid #2a2a44;color:#e8e8f0;font-family:monospace;font-size:12px;padding:8px 12px;border-radius:6px}
+.btn{padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid transparent}
+.btn-primary{background:#e8ff3c;color:#0d0d14;font-weight:700;min-width:160px}
+.btn-ghost{background:transparent;border-color:#2a2a44;color:#7878a0}
+.btn-blue{background:rgba(79,110,247,0.15);border-color:#4f6ef7;color:#4f6ef7;font-weight:600}
+.btn-remove{background:none;border:none;color:#4a4a68;font-size:18px;cursor:pointer}
+.error-box{background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);color:#ff8a94;border-radius:6px;padding:14px 18px;margin-bottom:20px;font-size:13px}
+.results-panel{background:#13131f;border:1px solid #2a2a44;border-radius:10px;overflow:hidden}
+.results-header{padding:18px 24px;border-bottom:1px solid #2a2a44;display:flex;justify-content:space-between;align-items:center}
+.table-wrap{overflow-x:auto}
+.data-table{width:100%;font-size:13px}
+.data-table th{background:#1a1a2e;padding:10px 14px;text-align:left;font-family:monospace;font-size:11px;color:#7878a0;white-space:nowrap;border-bottom:1px solid #2a2a44}
+.data-table td{padding:10px 14px;border-bottom:1px solid #2a2a44;vertical-align:top;max-width:280px}
+.row-even td{background:#13131f}
+.row-odd td{background:#1a1a2e}
+.data-table tr:hover td{background:#20203a}
+.empty{text-align:center;padding:80px 24px;color:#7878a0}
+.empty-icon{font-size:48px;margin-bottom:16px}
+.count-badge{background:#1a1a2e;color:#7878a0;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:8px;font-family:monospace}
+.progress{flex:1;height:4px;background:#1a1a2e;border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:#e8ff3c;border-radius:2px;transition:width 0.3s}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">
+    <span class="logo-mark">⬡</span>
+    <div>
+      <div class="logo-title">CompEdge</div>
+      <div class="logo-sub">Tour Competitor Intelligence</div>
+    </div>
+  </div>
+  <div id="header-actions"></div>
+</div>
+<div class="main">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div>
+        <div class="panel-title">Competitor URLs</div>
+        <div class="panel-hint">Paste tour listing URLs from any operator</div>
+      </div>
+      <button class="btn btn-ghost" style="font-size:12px;padding:5px 12px" onclick="addUrl()">+ Add URL</button>
+    </div>
+    <div id="url-list"></div>
+    <div style="display:flex;align-items:center;gap:16px;margin-top:18px">
+      <button class="btn btn-primary" id="scrape-btn" onclick="doScrape()">⚡ Scrape URLs</button>
+      <div class="progress" id="progress-bar" style="display:none"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+  </div>
+  <div id="error-box"></div>
+  <div id="results-box"></div>
+</div>
+
+<script>
+const FIELDS = [
+  {key:'operatorName',label:'Operator'},
+  {key:'tourTitle',label:'Tour Title'},
+  {key:'metaDescription',label:'Meta Description'},
+  {key:'lowSeasonPrice',label:'Low Season Price'},
+  {key:'highSeasonPrice',label:'High Season Price'},
+  {key:'pricePerDayLow',label:'Price/Day (Low)'},
+  {key:'pricePerDayHigh',label:'Price/Day (High)'},
+  {key:'duration',label:'Duration'},
+  {key:'tourStyle',label:'Tour Style'},
+  {key:'groupSize',label:'Group Size'},
+  {key:'starRating',label:'Star Rating'},
+  {key:'meals',label:'Meals (B/L/D)'},
+  {key:'transport',label:'Transport'},
+  {key:'hasFlightsIncluded',label:'Intl Flights'},
+  {key:'hasTransfers',label:'Transfers'},
+  {key:'hasFreeDay',label:'Free Day'},
+  {key:'hasWelcomeDinner',label:'Welcome Dinner'},
+  {key:'hasSingleSupplement',label:'Single Supp.'},
+  {key:'departures',label:'Departures'},
+  {key:'highlights',label:'Highlights'},
+  {key:'inclusions',label:'Inclusions'},
+  {key:'destinations',label:'Destinations'},
+  {key:'url',label:'URL'},
+];
+
+let results = [];
+let urls = [''];
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function cellHtml(value, key) {
+  if (value === null || value === undefined || value === '') return '<span class="null">—</span>';
+  if (typeof value === 'boolean') return value ? '<span class="badge-yes">Yes</span>' : '<span class="badge-no">No</span>';
+  if (Array.isArray(value)) {
+    if (!value.length) return '<span class="null">—</span>';
+    return '<ul class="cell-list">' + value.map(v => '<li>' + esc(v) + '</li>').join('') + '</ul>';
+  }
+  if (key === 'url') return '<a href="' + esc(value) + '" target="_blank" style="color:#4f6ef7;font-size:11px">' + esc(new URL(value).hostname) + '</a>';
+  if (['lowSeasonPrice','highSeasonPrice','pricePerDayLow','pricePerDayHigh'].includes(key)) return '<span class="price">' + esc(String(value)) + '</span>';
+  if (key === 'metaDescription') { const s = String(value); return esc(s.length > 80 ? s.slice(0,80) + '…' : s); }
+  return esc(String(value));
+}
+
+function renderUrlList() {
+  document.getElementById('url-list').innerHTML = urls.map((u, i) =>
+    '<div class="url-row">' +
+    '<span class="url-num">' + (i+1) + '</span>' +
+    '<input class="url-input" type="url" placeholder="https://www.intrepidtravel.com/..." value="' + esc(u) + '" oninput="urls[' + i + ']=this.value;updateBtn()" />' +
+    (urls.length > 1 ? '<button class="btn-remove" onclick="removeUrl(' + i + ')">×</button>' : '') +
+    '</div>'
+  ).join('');
+}
+
+function updateBtn() {
+  const count = urls.filter(u => u.trim()).length;
+  document.getElementById('scrape-btn').textContent = '⚡ Scrape ' + count + ' URL' + (count !== 1 ? 's' : '');
+}
+
+function addUrl() { urls.push(''); renderUrlList(); updateBtn(); }
+function removeUrl(i) { urls.splice(i, 1); renderUrlList(); updateBtn(); }
+
+function renderResults() {
+  const ha = document.getElementById('header-actions');
+  if (results.length > 0) {
+    ha.innerHTML = '<div style="display:flex;gap:10px">' +
+      '<button class="btn btn-ghost" onclick="clearAll()">Clear All</button>' +
+      '<button class="btn btn-blue" onclick="exportCsv()">↓ Export CSV</button>' +
+      '</div>';
+  } else {
+    ha.innerHTML = '';
+  }
+
+  const box = document.getElementById('results-box');
+  if (!results.length) {
+    box.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><h2 style="font-family:monospace;font-size:18px;color:#e8e8f0;margin-bottom:8px">Add competitor URLs to begin</h2><p style="font-size:14px;line-height:1.7;max-width:520px;margin:0 auto">Paste tour listing URLs from Intrepid, G Adventures, On the Go, Inspiring Vacations and others.</p></div>';
+    return;
+  }
+
+  const thead = '<tr>' + FIELDS.map(f => '<th>' + f.label + '</th>').join('') + '<th></th></tr>';
+  const tbody = results.map((row, i) =>
+    '<tr class="' + (i%2===0?'row-even':'row-odd') + '">' +
+    FIELDS.map(f => '<td>' + cellHtml(row[f.key], f.key) + '</td>').join('') +
+    '<td><button class="btn-remove" onclick="removeResult(' + i + ')">×</button></td>' +
+    '</tr>'
+  ).join('');
+
+  box.innerHTML = '<div class="results-panel">' +
+    '<div class="results-header">' +
+    '<div><span class="panel-title">Results</span><span class="count-badge">' + results.length + '</span></div>' +
+    '</div>' +
+    '<div class="table-wrap"><table class="data-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table></div>' +
+    '</div>';
+}
+
+function clearAll() { results = []; urls = ['']; renderUrlList(); updateBtn(); renderResults(); }
+function removeResult(i) { results.splice(i, 1); renderResults(); }
+
+function exportCsv() {
+  const rows = [FIELDS.map(f => f.label)];
+  results.forEach(r => {
+    rows.push(FIELDS.map(f => {
+      const v = r[f.key];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+      if (Array.isArray(v)) return v.join('; ');
+      return String(v);
+    }));
+  });
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'competitor-analysis.csv';
+  a.click();
+}
+
+async function doScrape() {
+  const validUrls = urls.filter(u => u.trim());
+  if (!validUrls.length) return;
+  const btn = document.getElementById('scrape-btn');
+  btn.textContent = 'Scraping...';
+  btn.disabled = true;
+  document.getElementById('progress-bar').style.display = 'block';
+  document.getElementById('error-box').innerHTML = '';
+
+  try {
+    const res = await fetch('/api/scrape/batch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({urls: validUrls})
+    });
+    const json = await res.json();
+    const errors = [];
+    json.results.forEach((r, i) => {
+      document.getElementById('progress-fill').style.width = ((i+1)/json.results.length*100) + '%';
+      if (r.success && r.data) {
+        const idx = results.findIndex(x => x.url === r.url);
+        if (idx >= 0) results[idx] = r.data;
+        else results.push(r.data);
+      } else {
+        errors.push(r);
+      }
+    });
+    if (errors.length) {
+      document.getElementById('error-box').innerHTML = '<div class="error-box"><strong>⚠ ' + errors.length + ' URL(s) failed:</strong><ul style="margin-top:8px;padding-left:18px">' +
+        errors.map(e => '<li><code>' + esc(e.url) + '</code> — ' + esc(e.error || 'Unknown error') + '</li>').join('') + '</ul></div>';
+    }
+  } catch(err) {
+    document.getElementById('error-box').innerHTML = '<div class="error-box">⚠ ' + esc(err.message) + '</div>';
+  }
+
+  btn.disabled = false;
+  document.getElementById('progress-bar').style.display = 'none';
+  document.getElementById('progress-fill').style.width = '0%';
+  renderUrlList();
+  updateBtn();
+  renderResults();
+}
+
+renderUrlList();
+updateBtn();
+renderResults();
+</script>
+</body>
+</html>
