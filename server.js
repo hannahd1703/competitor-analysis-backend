@@ -80,19 +80,24 @@ const FIELDS = [
   {key:'metaDescription',label:'Meta Description'},
   {key:'lowSeasonPrice',label:'Low Season Price'},
   {key:'highSeasonPrice',label:'High Season Price'},
-  {key:'pricePerDay',label:'Price / Day'},
+  {key:'pricePerDayLow',label:'Price/Day (Low)'},
+  {key:'pricePerDayHigh',label:'Price/Day (High)'},
   {key:'duration',label:'Duration'},
   {key:'tourStyle',label:'Tour Style'},
   {key:'groupSize',label:'Group Size'},
   {key:'starRating',label:'Star Rating'},
-  {key:'meals',label:'Meals'},
+  {key:'meals',label:'Meals (B/L/D)'},
   {key:'transport',label:'Transport'},
-  {key:'hasFlightsIncluded',label:'Flights Included'},
+  {key:'hasFlightsIncluded',label:'Intl Flights'},
+  {key:'hasTransfers',label:'Transfers'},
   {key:'hasFreeDay',label:'Free Day'},
   {key:'hasWelcomeDinner',label:'Welcome Dinner'},
-  {key:'hasSingleSupplement',label:'Single Supplement'},
+  {key:'hasSingleSupplement',label:'Single Supp.'},
+  {key:'departures',label:'Departures'},
+  {key:'highlights',label:'Highlights'},
   {key:'inclusions',label:'Inclusions'},
   {key:'destinations',label:'Destinations'},
+  {key:'url',label:'URL'},
 ];
 
 let results = [];
@@ -124,11 +129,11 @@ function exportExcel() {
       const v = r[f.key];
       if (v === null || v === undefined) return '';
       if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-      if (Array.isArray(v)) return v.join(', ');
+      if (Array.isArray(v)) return v.join('; ');
       return String(v);
     }));
   });
-  let csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\\n');
+  let csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

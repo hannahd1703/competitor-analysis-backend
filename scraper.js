@@ -1,69 +1,121 @@
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 
-function extractBestPrice(text) {
-  // Look for "from $X,XXX" or "AUD $X,XXX" patterns first - these are most reliable
-  const fromMatch = text.match(/(?:from|price|cost|starts?\s+at|per\s+person)\s*:?\s*(?:AUD|USD|AU)?\s*\$\s*([\d,]+(?:\.\d{2})?)/i);
-  if (fromMatch) return '$' + fromMatch[1];
-
-  // Fall back to any price over $500 (filters out small incidental numbers)
-  const allPrices = [];
-  const regex = /(?:AUD|USD|AU)?\s*\$\s*([\d,]+(?:\.\d{2})?)/g;
+function findPrices(text) {
+  const prices = [];
+  const regex = /(?:AUD|USD|AU|NZD)?\s*\$\s*([\d,]+(?:\.\d{2})?)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const num = parseFloat(match[1].replace(/,/g, ''));
-    if (num >= 500 && num <= 50000) {
-      allPrices.push({ raw: '$' + match[1], num });
+    if (num >= 300 && num <= 100000) {
+      prices.push({ raw: `$${match[1]}`, num });
     }
   }
-  if (!allPrices.length) return null;
-  allPrices.sort((a, b) => a.num - b.num);
-  return allPrices[0].raw;
+  return prices.sort((a, b) => a.num - b.num);
+}
+
+function extractPrices(text, $) {
+  // Try structured price elements first
+  const priceSelectors = [
+    '[class*="price"]', '[class*="cost"]', '[data-testid*="price"]',
+    '.from-price', '.tour-price', '.product-price', '[class*="amount"]',
+    '[class*="fare"]', '[class*="rate"]'
+  ];
+
+  let priceNums = [];
+  for (const sel of priceSelectors) {
+    $(sel).each((_, el) => {
+      const t = $(el).text().trim();
+      const found = findPrices(t);
+      priceNums.push(...found);
+    });
+  }
+
+  // Also scan full body
+  const bodyPrices = findPrices(text);
+  priceNums.push(...bodyPrices);
+
+  // Deduplicate
+  const seen = new Set();
+  priceNums = priceNums.filter(p => {
+    if (seen.has(p.num)) return false;
+    seen.add(p.num);
+    return true;
+  }).sort((a, b) => a.num - b.num);
+
+  if (!priceNums.length) return { low: null, high: null };
+
+  // Low = smallest realistic price, High = largest
+  return {
+    low: priceNums[0].raw,
+    high: priceNums[priceNums.length - 1].raw !== priceNums[0].raw
+      ? priceNums[priceNums.length - 1].raw
+      : null
+  };
 }
 
 function extractDuration(text) {
-  // Look for "X days" or "X nights" as a standalone fact, not in itinerary context
-  // Prioritise patterns like "14-day", "14 days", "14D/13N"
   const patterns = [
-    /(\d+)\s*[-–]\s*(?:day|night)s?\b/i,
-    /\b(\d+)\s*days?\s*(?:\/|and|\&)?\s*(?:\d+\s*nights?)?/i,
+    /\b(\d+)\s*-?\s*day\s*(?:tour|trip|journey|itinerary)?/i,
+    /\b(\d+)\s*days?\s*[&\/]\s*\d+\s*nights?/i,
     /\b(\d+)\s*nights?\b/i,
-    /\b(\d+)[Dd]\s*[\/\\]\s*\d+[Nn]\b/,
+    /duration\s*:?\s*(\d+)\s*days?/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
       const num = parseInt(match[1]);
-      // Sanity check - tour duration should be between 2 and 60 days
-      if (num >= 2 && num <= 60) return `${num} days`;
+      if (num >= 2 && num <= 60) return num;
     }
   }
   return null;
 }
 
-function extractGroupSize(text) {
+function extractGroupSize($, bodyText) {
+  let min = null;
+  let max = null;
+
   const patterns = [
-    /max(?:imum)?\s*(?:group\s*size\s*(?:of)?)?\s*:?\s*(\d+)\s*(?:people|pax|passengers|guests|travelers)?/i,
-    /(?:up\s*to|limited\s*to)\s*(\d+)\s*(?:people|pax|passengers|guests|travelers)/i,
-    /group\s*size\s*:?\s*(\d+)/i,
-    /(\d+)\s*(?:people|pax|passengers)\s*(?:max|maximum)/i,
+    { regex: /max(?:imum)?\s*(?:group\s*size)?\s*:?\s*(\d+)/i, type: 'max' },
+    { regex: /up\s*to\s*(\d+)\s*(?:people|pax|guests|travelers)/i, type: 'max' },
+    { regex: /limited\s*to\s*(\d+)/i, type: 'max' },
+    { regex: /group\s*size\s*:?\s*(\d+)/i, type: 'max' },
+    { regex: /min(?:imum)?\s*(?:group\s*size)?\s*:?\s*(\d+)/i, type: 'min' },
+    { regex: /from\s*(\d+)\s*(?:people|pax|guests)/i, type: 'min' },
+    { regex: /(\d+)\s*-\s*(\d+)\s*(?:people|pax|guests|travelers)/i, type: 'range' },
   ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
+
+  for (const { regex, type } of patterns) {
+    const match = bodyText.match(regex);
     if (match) {
-      const num = parseInt(match[1]);
-      if (num >= 2 && num <= 200) return `Max ${num}`;
+      if (type === 'max') {
+        const num = parseInt(match[1]);
+        if (num >= 2 && num <= 200) max = num;
+      } else if (type === 'min') {
+        const num = parseInt(match[1]);
+        if (num >= 1 && num <= 50) min = num;
+      } else if (type === 'range') {
+        const n1 = parseInt(match[1]);
+        const n2 = parseInt(match[2]);
+        if (n1 >= 1 && n1 <= 50) min = n1;
+        if (n2 >= 2 && n2 <= 200) max = n2;
+      }
     }
   }
+
+  if (min && max) return `${min}–${max}`;
+  if (max) return `Max ${max}`;
+  if (min) return `Min ${min}`;
   return null;
 }
 
 function extractStarRating(text) {
-  // Look for explicit hotel star ratings
   const patterns = [
-    /(\d)\s*-?\s*star\s*(?:hotel|accommodation|property|room)/i,
-    /(\d)\s*★/,
+    /(\d)\s*-?\s*star\s*(?:hotel|accommodation|property|room|resort)/i,
+    /(\d)\s*★\s*(?:hotel|accommodation)?/i,
     /accommodation\s*:?\s*(\d)\s*star/i,
+    /staying\s*in\s*(\d)\s*star/i,
+    /(\d)\s*star\s*(?:standard|rated|level)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -77,47 +129,38 @@ function extractStarRating(text) {
 
 function extractTourStyle(text) {
   const styles = [
-    'small group',
-    'private',
-    'luxury',
-    'premium',
-    'deluxe',
-    'budget',
-    'adventure',
-    'cultural',
-    'family',
-    'escorted',
-    'self-guided',
+    'small group', 'private', 'luxury', 'premium',
+    'deluxe', 'budget', 'adventure', 'cultural',
+    'family', 'escorted', 'self-guided',
   ];
   const found = styles.filter(s => new RegExp('\\b' + s + '\\b', 'i').test(text));
   return found.length ? found.slice(0, 3).join(', ') : null;
 }
 
-function extractMealCounts(text) {
+function extractMeals(text) {
   const results = [];
 
-  const patterns = [
-    { label: 'breakfasts', regex: /(\d+)\s*breakfasts?/i },
-    { label: 'lunches', regex: /(\d+)\s*lunches?/i },
-    { label: 'dinners', regex: /(\d+)\s*dinners?/i },
-  ];
+  // Try to find specific counts first
+  const breakfastMatch = text.match(/(\d+)\s*x?\s*breakfasts?/i);
+  const lunchMatch = text.match(/(\d+)\s*x?\s*lunches?/i);
+  const dinnerMatch = text.match(/(\d+)\s*x?\s*dinners?/i);
 
-  for (const { label, regex } of patterns) {
-    const match = text.match(regex);
-    if (match) results.push(`${match[1]} ${label}`);
-  }
+  if (breakfastMatch) results.push(`${breakfastMatch[1]}B`);
+  if (lunchMatch) results.push(`${lunchMatch[1]}L`);
+  if (dinnerMatch) results.push(`${dinnerMatch[1]}D`);
 
-  // If no counts found, check for general mentions
-  if (!results.length) {
-    const mentions = [];
-    if (/breakfast/i.test(text)) mentions.push('breakfast');
-    if (/lunch/i.test(text)) mentions.push('lunch');
-    if (/dinner/i.test(text)) mentions.push('dinner');
-    if (/all meals/i.test(text)) return 'All meals included';
-    return mentions.length ? mentions.join(', ') : null;
-  }
+  if (results.length) return results.join(', ');
 
-  return results.join(', ');
+  // Check for "all meals included"
+  if (/all\s*meals\s*(?:included|provided)/i.test(text)) return 'All meals';
+
+  // Fall back to simple mentions
+  const mentions = [];
+  if (/\bbreakfast\b/i.test(text)) mentions.push('B');
+  if (/\blunch\b/i.test(text)) mentions.push('L');
+  if (/\bdinner\b/i.test(text)) mentions.push('D');
+
+  return mentions.length ? mentions.join(', ') + ' (counts not listed)' : null;
 }
 
 function extractTransport(text) {
@@ -128,37 +171,110 @@ function extractTransport(text) {
     { key: 'ferry', label: 'Ferry' },
     { key: 'cruise', label: 'Cruise' },
     { key: 'shinkansen', label: 'Shinkansen' },
+    { key: 'cable car', label: 'Cable Car' },
+    { key: 'boat', label: 'Boat' },
   ];
   const found = types.filter(t => new RegExp('\\b' + t.key + '\\b', 'i').test(text));
   return found.length ? found.map(t => t.label).join(', ') : null;
 }
 
-function extractOperator($) {
-  // Try common operator/brand selectors
+function extractOperator($, url) {
   const selectors = [
     'meta[property="og:site_name"]',
-    '.operator-name',
-    '.brand-name',
-    '.company-name',
-    'header .logo img[alt]',
-    'header a[class*="logo"]',
-    '.site-logo',
+    '.operator-name', '.brand-name', '.company-name',
+    'header .logo img[alt]', '.site-logo img[alt]',
+    '[class*="logo"] img[alt]',
   ];
 
   for (const sel of selectors) {
     const el = $(sel);
     if (el.length) {
       const val = el.attr('content') || el.attr('alt') || el.text().trim();
-      if (val && val.length < 50) return val;
+      if (val && val.length > 1 && val.length < 60) return val.trim();
     }
   }
 
-  // Try to get from page title (usually "Tour Name | Operator Name")
+  // Extract from page title "Tour Name | Operator"
   const title = $('title').text();
   const parts = title.split(/[|\-–]/);
-  if (parts.length > 1) return parts[parts.length - 1].trim();
+  if (parts.length > 1) {
+    const last = parts[parts.length - 1].trim();
+    if (last.length > 1 && last.length < 60) return last;
+  }
 
+  // Fall back to domain name
+  try {
+    const hostname = new URL(url).hostname.replace('www.', '');
+    const domain = hostname.split('.')[0];
+    return domain.charAt(0).toUpperCase() + domain.slice(1);
+  } catch { return null; }
+}
+
+function extractDepartures(text) {
+  // Look for number of departures mentioned
+  const patterns = [
+    /(\d+)\s*departures?/i,
+    /(\d+)\s*departure\s*dates?/i,
+    /departs?\s*(\d+)\s*times?/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const num = parseInt(match[1]);
+      if (num >= 1 && num <= 365) return `${num} departures`;
+    }
+  }
   return null;
+}
+
+function extractTransfers(text) {
+  if (/(?:private|airport)\s*(?:arrival|departure|return)?\s*transfers?\s*(?:included|provided)/i.test(text)) return true;
+  if (/transfers?\s*(?:to\/from|to and from)\s*(?:airport|hotel)/i.test(text)) return true;
+  if (/(?:arrival|departure)\s*transfers?\s*(?:included|provided)/i.test(text)) return true;
+  return false;
+}
+
+function extractHighlights($, bodyText) {
+  const highlights = [];
+
+  // Try structured highlights/USP sections first
+  const selectors = [
+    '[class*="highlight"] li',
+    '[class*="feature"] li',
+    '[class*="usp"] li',
+    '[class*="key-point"] li',
+    '[class*="selling-point"] li',
+    '.trip-highlights li',
+    '.tour-highlights li',
+  ];
+
+  for (const sel of selectors) {
+    $(sel).each((_, el) => {
+      const t = $(el).text().trim();
+      if (t && t.length > 5 && t.length < 150) highlights.push(t);
+    });
+    if (highlights.length >= 5) break;
+  }
+
+  // If nothing found, look for bold/strong text as likely highlights
+  if (!highlights.length) {
+    $('strong, b').each((_, el) => {
+      const t = $(el).text().trim();
+      if (t.length > 10 && t.length < 100 && !/cookie|privacy|terms/i.test(t)) {
+        highlights.push(t);
+      }
+    });
+  }
+
+  return highlights.slice(0, 5);
+}
+
+function extractFlightsIncluded(text) {
+  // Only YES if international airfares explicitly included
+  if (/international\s*(?:flights?|airfares?)\s*(?:included|provided)/i.test(text)) return true;
+  if (/(?:includes?|including)\s*international\s*(?:flights?|airfares?)/i.test(text)) return true;
+  if (/return\s*(?:international)?\s*(?:flights?|airfares?)\s*(?:ex|from)\s*(?:australia|sydney|melbourne|brisbane|perth|auckland)/i.test(text)) return true;
+  return false;
 }
 
 async function scrapeUrl(url) {
@@ -171,47 +287,47 @@ async function scrapeUrl(url) {
     timeout: 8000,
   });
 
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   const html = await response.text();
   const $ = cheerio.load(html);
 
-  $('script, style, noscript, nav, footer, header').remove();
+  $('script, style, noscript').remove();
 
   const getMeta = (name) =>
     $(`meta[name="${name}"], meta[property="${name}"]`).attr('content') || null;
 
   const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+  const headingText = $('h1, h2, h3').text().replace(/\s+/g, ' ');
 
   // Identity
   const pageTitle = $('title').text().trim() || getMeta('og:title');
   const metaDescription = getMeta('description') || getMeta('og:description');
-  const operatorName = extractOperator($);
+  const operatorName = extractOperator($, url);
   const tourTitle = $('h1').first().text().trim() || pageTitle;
 
-  // Prices — focus on the most prominent price on the page
-  const priceText = $('[class*="price"], [class*="cost"], [data-testid*="price"], .from-price, .tour-price').first().text().trim();
-  const lowSeasonPrice = extractBestPrice(priceText || bodyText);
+  // Prices
+  const { low: lowSeasonPrice, high: highSeasonPrice } = extractPrices(bodyText, $);
 
-  // Look for high season price separately
-  const highPriceText = bodyText.match(/(?:high\s*season|peak\s*season|from)\s*:?\s*(?:AUD|USD|AU)?\s*\$([\d,]+)/i);
-  const highSeasonPrice = highPriceText ? '$' + highPriceText[1] : null;
+  // Duration
+  const durationDays = extractDuration(headingText) || extractDuration(bodyText);
+  const duration = durationDays ? `${durationDays} days` : null;
 
-  // Duration - look in title/heading first, then body
-  const headingText = $('h1, h2, .tour-title, .product-title').text();
-  const duration = extractDuration(headingText) || extractDuration(bodyText);
-
-  // Price per day
-  let pricePerDay = null;
-  if (lowSeasonPrice && duration) {
-    const days = parseInt(duration);
-    const price = parseFloat(lowSeasonPrice.replace(/[^0-9.]/g, ''));
-    if (!isNaN(days) && !isNaN(price) && days > 0) {
-      pricePerDay = `$${Math.round(price / days).toLocaleString()}`;
+  // Price per day (low and high)
+  let pricePerDayLow = null;
+  let pricePerDayHigh = null;
+  if (durationDays) {
+    if (lowSeasonPrice) {
+      const p = parseFloat(lowSeasonPrice.replace(/[^0-9.]/g, ''));
+      if (!isNaN(p)) pricePerDayLow = `$${Math.round(p / durationDays).toLocaleString()}`;
+    }
+    if (highSeasonPrice) {
+      const p = parseFloat(highSeasonPrice.replace(/[^0-9.]/g, ''));
+      if (!isNaN(p)) pricePerDayHigh = `$${Math.round(p / durationDays).toLocaleString()}`;
     }
   }
 
-  // Inclusions list
+  // Inclusions
   const inclusions = [];
   $('[class*="inclusions"] li, [class*="included"] li, [class*="whats-included"] li').each((_, el) => {
     const t = $(el).text().trim();
@@ -220,18 +336,9 @@ async function scrapeUrl(url) {
 
   // Destinations
   const destinations = [];
-  $('[class*="destination"], [class*="itinerary"] h3, [class*="day-title"], .stop-name').each((_, el) => {
+  $('[class*="destination"], [class*="itinerary"] h3, [class*="day-title"]').each((_, el) => {
     const t = $(el).text().trim();
     if (t && t.length < 50) destinations.push(t);
-  });
-
-  // JSON-LD
-  let ldPrice = null;
-  $('script[type="application/ld+json"]').each((_, el) => {
-    try {
-      const data = JSON.parse($(el).html());
-      ldPrice = data?.offers?.price || data?.offers?.[0]?.price || ldPrice;
-    } catch {}
   });
 
   return {
@@ -241,20 +348,31 @@ async function scrapeUrl(url) {
     tourTitle,
     operatorName,
     metaDescription,
-    lowSeasonPrice: ldPrice ? `$${ldPrice}` : lowSeasonPrice,
+
+    // Pricing
+    lowSeasonPrice,
     highSeasonPrice,
-    pricePerDay,
-    allPrices: [],
+    pricePerDayLow,
+    pricePerDayHigh,
+
+    // Tour details
     duration,
     tourStyle: extractTourStyle(bodyText),
-    groupSize: extractGroupSize(bodyText),
+    groupSize: extractGroupSize($, bodyText),
     starRating: extractStarRating(bodyText),
-    meals: extractMealCounts(bodyText),
+
+    // Inclusions
+    meals: extractMeals(bodyText),
     transport: extractTransport(bodyText),
-    hasFlightsIncluded: /flight(s)?\s*included|international\s*flight|includes?\s*flights?/i.test(bodyText),
+    hasFlightsIncluded: extractFlightsIncluded(bodyText),
+    hasTransfers: extractTransfers(bodyText),
     hasFreeDay: /free\s*day|leisure\s*day|day\s*at\s*leisure/i.test(bodyText),
     hasWelcomeDinner: /welcome\s*dinner/i.test(bodyText),
     hasSingleSupplement: /single\s*supplement/i.test(bodyText),
+
+    // New fields
+    departures: extractDepartures(bodyText),
+    highlights: extractHighlights($, bodyText),
     inclusions: inclusions.slice(0, 8),
     destinations: destinations.slice(0, 10),
   };
